@@ -1,37 +1,49 @@
 package org.example;
 
+import com.opencsv.CSVWriter;
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
-import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.math.BigDecimal;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.*;
+import java.time.LocalDate;
+import java.util.*;
 
 public class Main {
     public static void main(String[] args) {
+        List<ForexNewsBean> forexNewsBean = new ArrayList<>();
+        LocalDate startDate = LocalDate.of(2022, 1, 1);
+        while (startDate.isBefore(LocalDate.now())) {
+            forexNewsBean.addAll(getForexNewsByDate(startDate.toString()));
+            startDate = startDate.plusDays(1);
+        }
+        String filePath = "output.csv";
+        String[] header = {
+                "Event Name",
+                "Currency",
+                "Time",
+                "Date",
+                "Actual",
+                "Forecast",
+                "Previous"
+        };
+        writeListToCSV(forexNewsBean, filePath, header);
+    }
+
+    private static List<ForexNewsBean> getForexNewsByDate(String date) {
+        List<ForexNewsBean> forexNewsBean = new ArrayList<>();
         try {
             String url = "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData";
             HttpClient httpClient = HttpClients.createDefault();
@@ -43,10 +55,10 @@ public class Main {
             request.addHeader("x-requested-with", "XMLHttpRequest");
 
             List<NameValuePair> params = new ArrayList<NameValuePair>(2);
-            params.add(new BasicNameValuePair("country%5B%5D", "72"));
-            params.add(new BasicNameValuePair("country%5B%5D", "5"));
-            params.add(new BasicNameValuePair("dateFrom", "2022-01-03"));
-            params.add(new BasicNameValuePair("dateTo", "2022-01-03"));
+            params.add(new BasicNameValuePair("country[]", "72"));
+            params.add(new BasicNameValuePair("country[]", "5"));
+            params.add(new BasicNameValuePair("dateFrom", date));
+            params.add(new BasicNameValuePair("dateTo", date));
             params.add(new BasicNameValuePair("timeZone", "8"));
             params.add(new BasicNameValuePair("timeFilter", "timeRemain"));
             params.add(new BasicNameValuePair("currentTab", "custom"));
@@ -56,58 +68,125 @@ public class Main {
             HttpResponse response = httpClient.execute(request);
             JSONParser jsonParser = new JSONParser();
             JSONObject jsonObject = (JSONObject) jsonParser.parse(EntityUtils.toString(response.getEntity()));
-            if (jsonObject != null && !(Boolean) jsonObject.get("error")) {
-                JSONArray allSentiments = (JSONArray) jsonObject.get("symbols");
-                OffsetDateTime update = OffsetDateTime.now();
+            if (jsonObject != null && jsonObject.get("data") != null) {
+                String htmlData = (String) jsonObject.get("data");
+                htmlData = htmlData.replaceAll("\\\\/", "/");
+                htmlData = htmlData.replaceAll("\\\\", "");
+                htmlData = "<html>\n" +
+                        "\t<head/>\n" +
+                        "\t<body>\n" +
+                        "\t\t<table>" + htmlData +
+                        "</table>\n" +
+                        "\t</body>\n" +
+                        "</html>";
                 try {
-                    for (Object x : allSentiments) {
-                        JSONObject sentiment = (JSONObject) x;
-                        if (currency.equals(sentiment.get("name"))) {
-                            ForexSentimentBean bean = new ForexSentimentBean();
-                            bean.setTokenForexSentiment(0L);
-                            bean.setUpdateTimestamp(update);
-                            bean.setShortPosition(new BigDecimal(((Long) sentiment.get("shortPercentage")).toString()));
-                            bean.setLongPosition(new BigDecimal(((Long) sentiment.get("longPercentage")).toString()));
-                            bean.setCurrency(findCurrency(currencies, currency, ""));
-                            sentiments.add(bean);
+// Parse the HTML content
+                    Document document = Jsoup.parse(htmlData);
+                    List<Element> rows = document.select("tr"); // td
+                    for (Element row : rows) {
+                        Elements itemToFind = row.select("a");
+                        if (itemToFind.size() == 1) {
+                            String textEvent = itemToFind.get(0).text();
+                            if (textEvent.contains("Manufacturing PMI")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Manufacturing PMI", date));
+                            } else if (textEvent.contains("CPI")) {
+                                if (textEvent.contains("Core CPI (YoY)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Core CPI (YoY)", date));
+                                } else if (textEvent.contains("Core CPI (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Core CPI (MoM)", date));
+                                } else if (textEvent.contains("CPI (YoY)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "CPI (YoY)", date));
+                                } else if (textEvent.contains("CPI (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "CPI (MoM)", date));
+                                }
+                            } else if (textEvent.contains("PPI")) {
+                                if (textEvent.contains("Core PPI (YoY)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Core PPI (YoY)", date));
+                                } else if (textEvent.contains("Core PPI (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Core PPI (MoM)", date));
+                                } else if (textEvent.contains("PPI (YoY)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "PPI (YoY)", date));
+                                } else if (textEvent.contains("PPI (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "PPI (MoM)", date));
+                                }
+                            } else if (textEvent.contains("Unemployment Rate")) {
+                                if (textEvent.startsWith("Unemployment Rate")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Unemployment Rate", date));
+                                }
+                            } else if (textEvent.contains("Exports")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Exports", date));
+                            } else if (textEvent.contains("Imports")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Imports", date));
+                            } else if (textEvent.contains("Nonfarm payrolls")) {
+                                if (textEvent.startsWith("Nonfarm payrolls")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Nonfarm payrolls", date));
+                                }
+                            } else if (textEvent.contains("Retail Sales")) {
+                                if (textEvent.contains("Retail Sales (YoY)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Retail Sales (YoY)", date));
+                                } else if (textEvent.contains("Retail Sales (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Retail Sales (MoM)", date));
+                                }
+                            } else if (textEvent.contains("Services PMI")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Manufacturing PMI", date));
+                            } else if (textEvent.contains("Building permits")) {
+                                if (textEvent.contains("Building permits (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Building permits (MoM)", date));
+                                } else if (textEvent.contains("Building permits")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Building permits", date));
+                                }
+                            } else if (textEvent.contains("Existing Home Sales")) {
+                                if (textEvent.contains("Existing Home Sales (MoM)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Existing Home Sales (MoM)", date));
+                                } else if (textEvent.contains("Existing Home Sales")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Existing Home Sales", date));
+                                }
+                            } else if (textEvent.contains("Initial Jobless Claims")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Initial Jobless Claims", date));
+                            }
+
                         }
                     }
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
             }
-//            URL requestUrl = new URL(url);
-//            HttpURLConnection connection = (HttpURLConnection) requestUrl.openConnection();
-//            connection.setRequestMethod("POST");
-//            //connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-//            //connection.setRequestProperty("x-requested-with", "XMLHttpRequest");
-//            //connection.setDoOutput(true);
-//
-//            byte[] requestDataBytes = requestData.getBytes(StandardCharsets.UTF_8);
-//            ///connection.getOutputStream().write(requestDataBytes);
-//
-//            int responseCode = connection.getResponseCode();
-//            if (responseCode == HttpURLConnection.HTTP_OK) {
-//                BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-//                String line;
-//                StringBuilder response = new StringBuilder();
-//                while ((line = reader.readLine()) != null) {
-//                    response.append(line);
-//                }
-//                reader.close();
-//
-//                String jsonResponse = response.toString();
-//                System.out.println(jsonResponse);
-//            } else {
-//                System.out.println("Request failed with response code: " + responseCode);
-//            }
+        } catch (
+                IOException e) {
+            e.printStackTrace();
+        } catch (
+                ParseException e) {
+            throw new RuntimeException(e);
+        }
+        return forexNewsBean;
+    }
 
-//            connection.disconnect();
+    private static ForexNewsBean createNewForexNewsBean(Element row, String eventName, String date) {
+        String time = Objects.requireNonNull(row.select("td.time").first()).text();
+        String currency = Objects.requireNonNull(row.select("td.flagCur").first()).text();
+        String actual = Objects.requireNonNull(row.select("td.act").first()).text();
+        String forecast = Objects.requireNonNull(row.select("td.fore").first()).text();
+        String previous = Objects.requireNonNull(row.select("td.prev").first()).text();
+        return new ForexNewsBean(eventName, currency, time, LocalDate.parse(date), actual, forecast, previous);
+    }
 
+    public static void writeListToCSV(List<ForexNewsBean> data, String filePath, String[] header) {
+        try (CSVWriter writer = new CSVWriter(new FileWriter(filePath), ';', '"', '"', "\n")) {
+            writer.writeNext(header);
+            for (ForexNewsBean row : data) {
+                String[] rowString = {
+                        row.getEventName(),
+                        row.getEventCurrency(),
+                        row.getTime(),
+                        String.valueOf(row.getEventDate()),
+                        row.getActual(),
+                        row.getForecast(),
+                        row.getPrevious()
+                };
+                writer.writeNext(rowString);
+            }
         } catch (IOException e) {
             e.printStackTrace();
-        } catch (ParseException e) {
-            throw new RuntimeException(e);
         }
     }
 }
