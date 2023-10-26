@@ -26,6 +26,7 @@ public class Main {
         List<ForexNewsBean> forexNewsBean = new ArrayList<>();
         LocalDate startDate = LocalDate.of(2022, 1, 1);
         while (startDate.isBefore(LocalDate.now())) {
+            System.out.println(startDate);
             forexNewsBean.addAll(getForexNewsByDate(startDate.toString()));
             startDate = startDate.plusDays(1);
         }
@@ -88,7 +89,11 @@ public class Main {
                         if (itemToFind.size() == 1) {
                             String textEvent = itemToFind.get(0).text();
                             if (textEvent.contains("Manufacturing PMI")) {
-                                forexNewsBean.add(createNewForexNewsBean(row, "Manufacturing PMI", date));
+                                if (textEvent.contains("ISM Manufacturing PMI")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "ISM Manufacturing PMI", date));
+                                } else if (textEvent.contains("ISM Non-Manufacturing PMI")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "ISM Non-Manufacturing PMI", date));
+                                }
                             } else if (textEvent.contains("CPI")) {
                                 if (textEvent.contains("Core CPI (YoY)")) {
                                     forexNewsBean.add(createNewForexNewsBean(row, "Core CPI (YoY)", date));
@@ -114,9 +119,13 @@ public class Main {
                                     forexNewsBean.add(createNewForexNewsBean(row, "Unemployment Rate", date));
                                 }
                             } else if (textEvent.contains("Exports")) {
-                                forexNewsBean.add(createNewForexNewsBean(row, "Exports", date));
+                                if (textEvent.startsWith("Exports")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Exports", date));
+                                }
                             } else if (textEvent.contains("Imports")) {
-                                forexNewsBean.add(createNewForexNewsBean(row, "Imports", date));
+                                if (textEvent.startsWith("Imports")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Imports", date));
+                                }
                             } else if (textEvent.contains("Nonfarm payrolls")) {
                                 if (textEvent.startsWith("Nonfarm payrolls")) {
                                     forexNewsBean.add(createNewForexNewsBean(row, "Nonfarm payrolls", date));
@@ -127,8 +136,6 @@ public class Main {
                                 } else if (textEvent.contains("Retail Sales (MoM)")) {
                                     forexNewsBean.add(createNewForexNewsBean(row, "Retail Sales (MoM)", date));
                                 }
-                            } else if (textEvent.contains("Services PMI")) {
-                                forexNewsBean.add(createNewForexNewsBean(row, "Manufacturing PMI", date));
                             } else if (textEvent.contains("Building permits")) {
                                 if (textEvent.contains("Building permits (MoM)")) {
                                     forexNewsBean.add(createNewForexNewsBean(row, "Building permits (MoM)", date));
@@ -143,8 +150,19 @@ public class Main {
                                 }
                             } else if (textEvent.contains("Initial Jobless Claims")) {
                                 forexNewsBean.add(createNewForexNewsBean(row, "Initial Jobless Claims", date));
+                            } else if (textEvent.contains("Nonfarm Payrolls")) {
+                                if (textEvent.startsWith("Nonfarm Payrolls")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "Nonfarm Payrolls", date));
+                                }
+                            } else if (textEvent.contains("GDP (QoQ)")) {
+                                if (textEvent.startsWith("GDP (QoQ)")) {
+                                    forexNewsBean.add(createNewForexNewsBean(row, "GDP (QoQ)", date));
+                                }
+                            } else if (textEvent.contains("Interest Rate Decision")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Interest Rate Decision", date));
+                            } else if (textEvent.contains("Consumer Confidence")) {
+                                forexNewsBean.add(createNewForexNewsBean(row, "Consumer Confidence", date));
                             }
-
                         }
                     }
                 } catch (Exception ex) {
